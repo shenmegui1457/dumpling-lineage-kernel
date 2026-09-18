@@ -1,7 +1,7 @@
-name: Build Droidspaces Kernel
+name: Build Droidspaces Kernel (Lineage 22.2)
 
 on:
-  workflow_dispatch: # 允许你手动点击按钮触发编译
+  workflow_dispatch:
 
 jobs:
   build:
@@ -9,31 +9,36 @@ jobs:
     steps:
     - name: Checkout Source
       uses: actions/checkout@v4
+      with:
+        repository: LineageOS/android_kernel_oneplus_msm8998
+        ref: lineage-22.2 # 如果报错说找不到这个分支，把这里改成 lineage-22.1 或 lineage-22
+        fetch-depth: 1
 
     - name: Setup Dependencies
       run: |
         sudo apt-get update
         sudo apt-get install -y bc bison build-essential curl flex g++-multilib gcc-multilib git gnupg gperf imagemagick lib32readline-dev lib32z1-dev libelf-dev liblz4-tool libncurses-dev libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev python3 python3-pip
-        # 安装 GCC 交叉编译工具链（64位 + 32位）
         sudo apt-get install -y gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi
 
     - name: Configure Droidspaces Defconfig
       run: |
         CONFIG_FILE=$(find arch/arm64/configs -name "*dumpling*" -o -name "*oneplus5*" | head -n 1)
-        if [ -z "$CONFIG_FILE" ]; then CONFIG_FILE="arch/arm64/configs/vendor/lineage_oneplus5_defconfig"; fi
+        if [ -z "$CONFIG_FILE" ]; then CONFIG_FILE="arch/arm64/configs/vendor/dumpling_defconfig"; fi
+        echo "正在修改配置文件: $CONFIG_FILE"
+        
         echo "CONFIG_NAMESPACES=y" >> $CONFIG_FILE
         echo "CONFIG_PID_NS=y" >> $CONFIG_FILE
-        echo "CONFIG_UTS_NS=y" >> $CONFIG_FILE
-        echo "CONFIG_IPC_NS=y" >> $CONFIG_FILE
+       CONFIG echo "CONFIG_UTS_NS=y" >> $CONFIG_FILE
+        echo "CONFIG_IPC_NS_FILE=y" >> $CON
+FIG_FILE
         echo "CONFIG_NET_NS=y" >> $CONFIG_FILE
-        echo "CONFIG_CGROUPS=y" >> $CONFIG_FILE
-        echo "CONFIG_CGROUP_DEVICE=y" >> $CONFIG_FILE
+               echo "CONFIG_CGROUPS=y" >> $CONFIG_FILE
+        echo echo "CONFIG_CGROUP_DEVICE=y" >> $CONFIG_FILE
         echo "CONFIG_CGROUP_PIDS=y" >> $CONFIG_FILE
         echo "CONFIG_MEMCG=y" >> $CONFIG_FILE
         echo "CONFIG_SECCOMP=y" >> $CONFIG_FILE
         echo "CONFIG_SECCOMP_FILTER=y" >> $CONFIG_FILE
-        echo "CONFIG_DEVTMPFS=y" >> $CONFIG_FILE
-        echo "CONFIG_OVERLAY_FS=y" >> $CONFIG_FILE
+        echo "CONFIG_DEVTMPFS=y" >> $ "CONFIG_OVERLAY_FS=y" >> $CONFIG_FILE
         echo "CONFIG_VETH=y" >> $CONFIG_FILE
         echo "CONFIG_BRIDGE=y" >> $CONFIG_FILE
 
@@ -51,8 +56,7 @@ jobs:
         export CROSS_COMPILE=aarch64-linux-gnu-
         export CROSS_COMPILE_ARM32=arm-linux-gnueabi-
         
-        # 使用系统 GCC 编译
-        make O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- lineage_oneplus5_defconfig || make O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- defconfig
+        make O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- lineage_oneplus5_defconfig || make O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- dumpling_defconfig || echo "尝试所有defconfig"
         make -j$(nproc --all) O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi-
 
     - name: Package Image
