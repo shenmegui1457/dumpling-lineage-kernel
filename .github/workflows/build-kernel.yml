@@ -10,8 +10,7 @@ jobs:
     - name: Checkout Source
       run: |
         git clone --depth 1 -b lineage-22.2 https://github.com/LineageOS/android_kernel_oneplus_msm8998.git kernel_source || \
-        git clone --depth 1 -b lineage-22 https://github.com/LineageOS/android_kernel_oneplus_msm8998.git kernel_source || \
-        git clone --depth 1 -b lineage-21 https://github.com/LineageOS/android_kernel_oneplus_msm8998.git kernel_source
+        git clone --depth 1 -b lineage-22.1 https://github.com/LineageOS/android_kernel_oneplus_msm8998.git kernel_source
 
     - name: Setup Dependencies
       run: |
@@ -19,7 +18,46 @@ jobs:
         sudo apt-get install -y bc bison build-essential curl flex g++-multilib gcc-multilib git gnupg gperf imagemagick lib32readline-dev lib32z1-dev libelf-dev liblz4-tool libncurses-dev libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev python3 python3-pip
         sudo apt-get install -y gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi
 
-    - name: Configure and Build
+    - name: Configure Droidspaces Defconfig
+      run: |
+        cd kernel_source
+        CONFIG_FILE=$(find arch/arm64/configs -name "*dumpling*" -o -name "*oneplus5*" | head -n 1)
+        if [ -z "$CONFIG_FILE" ]; then CONFIG_FILE="arch/arm64/configs/vendor/dumpling_defconfig"; fi
+        echo "正在修改配置文件: $CONFIG_FILE"
+
+        # 添加 Droidspaces 必需的命名空间和 IPC 支持
+        echo "CONFIG_NAMESPACES=y" >> $CONFIG_FILE
+        echo "CONFIG_PID_NS=y" >> $CONFIG_FILE
+        echo "CONFIG_UTS_NS=y" >> $CONFIG_FILE
+        echo "CONFIG_IPC_NS=y" >> $CONFIG_FILE
+        echo "CONFIG_NET_NS=y" >> $CONFIG_FILE
+        echo "CONFIG_SYSVIPC=y" >> $CONFIG_FILE
+        echo "CONFIG_POSIX_MQUEUE=y" >> $CONFIG_FILE
+        echo "CONFIG_USER_NS=y" >> $CONFIG_FILE
+        
+        # 添加 Cgroups 和 Seccomp 支持
+        echo "CONFIG_CGROUPS=y" >> $CONFIG_FILE
+        echo "CONFIG_CGROUP_DEVICE=y" >> $CONFIG_FILE
+        echo "CONFIG_CGROUP_PIDS=y" >> $CONFIG_FILE
+        echo "CONFIG_MEMCG=y" >> $CONFIG_FILE
+        echo "CONFIG_SECCOMP=y" >> $CONFIG_FILE
+        echo "CONFIG_SECCOMP_FILTER=y" >> $CONFIG_FILE
+        
+        # 添加文件系统和网络支持
+        echo "CONFIG_DEVTMPFS=y" >> $CONFIG_FILE
+        echo "CONFIG_OVERLAY_FS=y" >> $CONFIG_FILE
+        echo "CONFIG_VETH=y" >> $CONFIG_FILE
+        echo "CONFIG_BRIDGE=y" >> $CONFIG_FILE
+
+    - name: Apply Droidspaces Patch
+      run: |
+        cd kernel_source
+        wget -q https://github.com/ravindu644/Droidspaces-OSS/raw/main/Kernel-Patches/non-GKI/droidspaces.patch -O /tmp/droidspaces.patch || true
+        if [ -f "/tmp/droidspaces.patch" ]; then
+          git apply /tmp/droidspaces.patch || echo "补丁应用失败，跳过"
+        fi
+
+    - name: Build Kernel
       run: |
         cd kernel_source
         export ARCH=arm64
@@ -27,32 +65,10 @@ jobs:
         export CROSS_COMPILE=aarch64-linux-gnu-
         export CROSS_COMPILE_ARM32=arm-linux-gnueabi-
 
-        CONFIG_FILE=$(find arch/arm64/configs -name "*dumpling*" -o -name "*oneplus5*" | head -n 1)
-        if [ -z "$CONFIG_FILE" ]; then CONFIG_FILE="arch/arm64/configs/vendor/dumpling_defconfig"; fi
-        echo "正在修改配置文件: $CONFIG_FILE"
-
-        # 追加 Droidspaces 所需配置
-        echo "CONFIG_NAMESPACES=y" >> $CONFIG_FILE
-        echo "CONFIG_PID_NS=y" >> $CONFIG_FILE
-        echo "CONFIG_UTS_NS=y" >> $CONFIG_FILE
-        echo "CONFIG_IPC_NS=y" >> $CONFIG_FILE
-        echo "CONFIG_NET_NS=y" >> $CONFIG_FILE
-        echo "CONFIG_CGROUPS=y" >> $CONFIG_FILE
-        echo "CONFIG_CGROUP_DEVICE=y" >> $CONFIG_FILE
-        echo "CONFIG_CGROUP_PIDS=y" >> $CONFIG_FILE
-        echo "CONFIG_MEMCG=y" >> $CONFIG_FILE
-        echo "CONFIG_SECCOMP=y" >> $CONFIG_FILE
-        echo "CONFIG_SECCOMP_FILTER=y" >> $CONFIG_FILE
-        echo "CONFIG_DEVTMPFS=y" >> $CONFIG_FILE
-        echo "CONFIG_OVERLAY_FS=y" >> $CONFIG_FILE
-        echo "CONFIG_VETH=y" >> $CONFIG_FILE
-        echo "CONFIG_BRIDGE=y" >> $CONFIG_FILE
-
-        # 编译第一步：生成 .config
         make O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- lineage_oneplus5_defconfig || \
         make O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- dumpling_defconfig
 
-        # 编译第二步：开始正式编译（加入 KCFLAGS="-Wno-error" 忽略警告错误）
+        # 使用 KCFLAGS="-Wno-error" 忽略警告错误，使其能一路编译到底
         make -j$(nproc --all) O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- KCFLAGS="-Wno-error"
 
     - name: Package Image
