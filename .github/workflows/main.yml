@@ -1,0 +1,71 @@
+name: Build Droidspaces Kernel
+
+on:
+  workflow_dispatch: # 允许你手动点击按钮触发编译
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout Source
+      uses: actions/checkout@v4
+
+    - name: Setup Dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y bc bison build-essential curl flex g++-multilib gcc-multilib git gnupg gperf imagemagick lib32ncurses5-dev lib32readline-dev lib32z1-dev libelf-dev liblz4-tool libncurses5 libncurses5-dev libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev python3 python3-pip
+
+    - name: Setup Clang Toolchain
+      run: |
+        mkdir -p clang
+        cd clang
+        wget -q https://github.com/llvm/llvm-project/releases/download/llvmorg-18.1.8/clang+llvm-18.1.8-x86_64-linux-gnu-ubuntu-18.04.tar.xz -O clang.tar.xz
+        tar -xf clang.tar.xz --strip-components=1
+        cd ..
+        echo "PATH=$(pwd)/clang/bin:$PATH" >> $GITHUB_ENV
+
+    - name: Configure Droidspaces Defconfig
+      run: |
+        CONFIG_FILE=$(find arch/arm64/configs -name "*dumpling*" -o -name "*oneplus5*" | head -n 1)
+        if [ -z "$CONFIG_FILE" ]; then CONFIG_FILE="arch/arm64/configs/vendor/lineage_oneplus5_defconfig"; fi
+        echo "CONFIG_NAMESPACES=y" >> $CONFIG_FILE
+        echo "CONFIG_PID_NS=y" >> $CONFIG_FILE
+        echo "CONFIG_UTS_NS=y" >> $CONFIG_FILE
+        echo "CONFIG_IPC_NS=y" >> $CONFIG_FILE
+        echo "CONFIG_NET_NS=y" >> $CONFIG_FILE
+        echo "CONFIG_CGROUPS=y" >> $CONFIG_FILE
+        echo "CONFIG_CGROUP_DEVICE=y" >> $CONFIG_FILE
+        echo "CONFIG_CGROUP_PIDS=y" >> $CONFIG_FILE
+        echo "CONFIG_MEMCG=y" >> $CONFIG_FILE
+        echo "CONFIG_SECCOMP=y" >> $CONFIG_FILE
+        echo "CONFIG_SECCOMP_FILTER=y" >> $CONFIG_FILE
+        echo "CONFIG_DEVTMPFS=y" >> $CONFIG_FILE
+        echo "CONFIG_OVERLAY_FS=y" >> $CONFIG_FILE
+        echo "CONFIG_VETH=y" >> $CONFIG_FILE
+        echo "CONFIG_BRIDGE=y" >> $CONFIG_FILE
+
+    - name: Apply Droidspaces Patch
+      run: |
+        wget -q https://github.com/ravindu644/Droidspaces-OSS/raw/main/Kernel-Patches/non-GKI/droidspaces.patch -O /tmp/droidspaces.patch || true
+        if [ -f "/tmp/droidspaces.patch" ]; then
+          git apply /tmp/droidspaces.patch || echo "补丁应用失败，跳过"
+        fi
+
+    - name: Build Kernel
+      run: |
+        export ARCH=arm64
+        export SUBARCH=arm64
+        export CROSS_COMPILE=aarch64-linux-gnu-
+        make O=out ARCH=arm64 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- lineage_oneplus5_defconfig || make O=out ARCH=arm64 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- defconfig
+        make -j$(nproc --all) O=out ARCH=arm64 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu-
+
+    - name: Package Image
+      run: |
+        find out/arch/arm64/boot/ -name "Image*" -exec cp {} . \;
+        zip -r kernel.zip Image* 2>/dev/null || zip -r kernel.zip boot.img 2>/dev/null
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: Compiled-Kernel
+        path: kernel.zip
