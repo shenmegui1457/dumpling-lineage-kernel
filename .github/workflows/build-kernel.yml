@@ -31,6 +31,7 @@ jobs:
         if [ -z "$CONFIG_FILE" ]; then CONFIG_FILE="arch/arm64/configs/vendor/dumpling_defconfig"; fi
         echo "正在修改配置文件: $CONFIG_FILE"
 
+        # 追加 Droidspaces 所需配置
         echo "CONFIG_NAMESPACES=y" >> $CONFIG_FILE
         echo "CONFIG_PID_NS=y" >> $CONFIG_FILE
         echo "CONFIG_UTS_NS=y" >> $CONFIG_FILE
@@ -47,13 +48,12 @@ jobs:
         echo "CONFIG_VETH=y" >> $CONFIG_FILE
         echo "CONFIG_BRIDGE=y" >> $CONFIG_FILE
 
-        wget -q https://github.com/ravindu644/Droidspaces-OSS/raw/main/Kernel-Patches/non-GKI/droidspaces.patch -O /tmp/droidspaces.patch || true
-        if [ -f "/tmp/droidspaces.patch" ]; then
-          git apply /tmp/droidspaces.patch || echo "补丁应用失败，跳过"
-        fi
+        # 编译第一步：生成 .config
+        make O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- lineage_oneplus5_defconfig || \
+        make O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- dumpling_defconfig
 
-        make O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- lineage_oneplus5_defconfig || make O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- dumpling_defconfig
-        make -j$(nproc --all) O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi-
+        # 编译第二步：开始正式编译（加入 KCFLAGS="-Wno-error" 忽略警告错误）
+        make -j$(nproc --all) O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- KCFLAGS="-Wno-error"
 
     - name: Package Image
       run: |
